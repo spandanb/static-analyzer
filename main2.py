@@ -2,11 +2,33 @@ import sys
 import os
 import os.path
 import utils as ut
+import tree
+import consts as ct
 import argparse
 import pylint as pyl
+import ast
 
+def classify_entity(entity, bin_dict):
+    """
+    classifies entity, creates the corresponding object 
+    and inserts it into the bin_dict
+    """
+    print entity
 
+def create_interm_obj(module):
+    """
+    Creates an AST
+    
+    Arguments:
+        module:- a FileLeaf object representing a py module
+    
+    Returns: an AST representing the module 
+    """
+    mod_node = ast.parse(module.readlines())
 
+    return mod_node 
+
+#TODO: Remove
 def create_bins(module):
     """
     Creates a dictionary of entity type to lists
@@ -16,8 +38,28 @@ def create_bins(module):
     
     Returns: a dictionary of entity type to lists 
     """
-
+    bin_dict = {}
+    for entity in ct.ENTITY_LIST:
+        bin_dict[entity] = []
     
+    entity = []
+    #TODO: Fix closing brace should not be a new entity
+    for line in module.readlines():
+        if ut.is_top_head(line):
+            #TODO: FIX: This approach based on indentation won't work in general, 
+            #since code can be arbitarily indented because of """, ''', [, etc.
+            #will only work if code is indendented stylistically correctly
+            if entity: 
+                classify_entity(entity, bin_dict)
+                entity = []
+            entity.append(line)
+        else:
+            entity.append(line)
+    #print module.path
+    #print module.readlines() 
+
+    sys.exit(1) #REMOVE
+    return bin_dict
 
 def create_file_tree(rootdir):
     """Creates a k-tree that takes the dir hierarchy and
@@ -33,7 +75,7 @@ def create_file_tree(rootdir):
     if not os.path.isdir(rootdir):
         error("root is not a dir")
     
-    root = ut.FileTree(rootdir)
+    root = tree.FileTree(rootdir)
     pathmap = {}
     ptr =  None
     this = None
@@ -85,7 +127,10 @@ if __name__ == '__main__':
     #"/Users/spandan/Documents/pproj/stat/test_data/tst"
     
     proj_file_tree = create_file_tree(rootdir)
+    mod_vect = []
     for package in proj_file_tree.package_list():
         for module in package.module_list():
-            bins = create_bins(module)
-#            m = create_module_obj(bins)
+            mod_obj = create_interm_obj(module)
+            mod_vect.append(mod_obj)
+
+            
