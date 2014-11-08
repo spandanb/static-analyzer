@@ -4,13 +4,8 @@ the code or directly help in the analysis.
 """
 import ast
 import tree
-
-
-def prnt(obj, spaces):
-    if type(obj) != str:
-        obj = str(obj)
-    norm_spaces = spaces + len(obj) * 2
-    print(obj.rjust(norm_spaces))
+import consts
+import pprint
 
 """
 Create an intra connection graph that maps how functions and other entities,
@@ -41,7 +36,6 @@ def create_interconnection_graph(mod_vect):
     """
     pass
 
-nodeTypes = ["Num", "Str", "Bytes", "List", "Tuple", "Set", "Dict", "Ellipsis", "NameConstant", "Name", "Load", "Store", "Del", "Starred", "Expr", "UnaryOp", "UAdd", "USub", "Not", "Invert", "BinOp", "Add", "Sub", "Mult", "Div", "FloorDiv", "Mod", "Pow", "LShift", "RShift", "BitOr", "BitXor", "BitAnd", "BoolOp", "And", "Or", "Compare", "Eq", "NotEq", "Lt", "LtE", "Gt", "GtE", "Is", "IsNot", "In", "NotIn", "Call", "keyword", "IfExp", "Attribute", "Subscript", "Index", "Slice", "ExtSlice", "ListComp", "SetComp", "GeneratorExp", "DictComp", "comprehension", "Assign", "AugAssign", "Print", "Raise", "Assert", "Delete", "Pass", "Import", "ImportFrom", "alias", "If", "For", "While", "Break", "Continue", "Try", "TryFinally", "TryExcept", "ExceptHandler", "With", "FunctionDef", "Lambda", "arguments", "arg", "Return", "Yield", "YieldFrom", "Global", "Nonlocal", "ClassDef"]  
 
 class NodeVisitor(ast.NodeVisitor):
     def generic_visit(self, node):
@@ -91,26 +85,97 @@ class AllNames(ast.NodeVisitor):
         self.names.add(node.id)
 
 
-def getMap():
+
+def getNode(filename):
     """
-    return a dictionary that holds lists of various entity types
+    Returns a AST node object corresponding to argument file
+    
+    Arguments:- filename
+        name of file to converted
+
+    Return: AST node object
     """
-    return {"func":[], "class":[], "module":[]}
+    f = open(filename, "r")
+    lines = "".join(f.readlines())
+    f.close()
+    
+    node = ast.parse(lines)
+    return node
+
+def prettyPrint(self_map):
+    pprint.pprint(self_map)
 
 
-class Func(ast.NodeVisitor):
-    """Copied from ast.py""" 
+def getTopLevelObjs(self_map):
+    """
+    Returns dict of top level entity types to list of names
+    """
+    head = lambda double: double[0]
+    top_level_objs = {}
+    for entity_type, entity_vect  in self_map.iteritems():
+        vect = map(head, entity_vect)
+        if vect:
+            top_level_objs[entity_type] = vect
+
+    return top_level_objs
+
+
+def getTopLevelObjs2(self_map):
+    """
+    Returns list of doubles of name and entity types
+    """
+    head = lambda double: double[0]
+    top_level_objs = []
+    for entity_type, entity_vect  in self_map.iteritems():
+        for entity in entity_vect:
+            top_level_objs.append((head(entity), entity_type))
+    
+    return top_level_objs
+
+node_type = lambda node: node.__class__.__name__
+
+class NodeVisitor(ast.NodeVisitor):
+    """Class that implements NodeVisitor functionality
+    The methods visit, generic_visit copied from ast.py and
+    lightly modified. 
+    
+    The attributes i.e. name, arg, decorators etc. are 
+    properties of the node obj. The attributes vary depending on
+    the specific node obj, i.e. a function has an arg, whereas a 
+    class does not.
+    
+    """ 
     def visit(self, node, node_map):
         """Visit a node."""
-        method = 'visit_' + node.__class__.__name__
+        node_type = node.__class__.__name__
+        method = 'visit_' + node_type 
         visitor = getattr(self, method, self.generic_visit)
+        
         """
         If visitor method does not exist, calls generic visit
+        i.e. the following statement is either visit_FOO(...) 
+        or generic_visit(...)
         """
         return visitor(node, node_map)
 
     def generic_visit(self, node, node_map):
-        """Called if no explicit visitor function exists for a node."""
+        """Called if no explicit visitor function exists for a node.
+        Does nothing- calls visit on children nodes
+        @Args
+            node (AST Node)- the AST node to visited
+            node_map (dict)- this node's map, contains descendents
+        """
+        node_type = node.__class__.__name__
+        if node_type in consts.AST_NODE_TYPE2: 
+           parent_map = node_map
+           #Create dict, and add entries on the fly
+           # as needed
+           node_map = {}
+           if not parent_map.has_key(node_type): 
+                parent_map[node_type]=[]
+           unique_id = getattr(node, "name", node.lineno)
+           parent_map[node_type].append((unique_id, node_map))
+        
         for field, value in ast.iter_fields(node):
             if isinstance(value, list):
                 for item in value:
@@ -119,100 +184,51 @@ class Func(ast.NodeVisitor):
             elif isinstance(value, ast.AST):
                 self.visit(value, node_map)
 
-    def scoped_visit(self, node, node_map):
-        """Called if no explicit visitor function exists for a node."""
-        ret_vector = []
-        for field, value in ast.iter_fields(node):
-            if isinstance(value, list):
-                for item in value:
-                    if isinstance(item, ast.AST):
-                        ret_vector.append(self.visit(item, node_map))
-            elif isinstance(value, ast.AST):
-                ret_vector.append(self.visit(value, node_map))
-        #return ret_vector
-
-    """
-    The attributes i.e. name, arg, decorators etc are 
-    properties of the node obj
-    """
 #    def visit_Assign(self, node):
 #        print("\nIn Assign")
 #        print(node.value)
 #        self.generic_visit(node)
     
-    def visit_FunctionDef(self, node, parent_map):
-        #name, args, body, decorator_list, returns
-        #self.func_list.append(node.name) 
-        parent_map["func"].append(node.name)
-        #self.generic_visit(node)
-        #return node.name
+#    def visit_FunctionDef(self, node, parent_map):
+#        #name, args, body, decorator_list, returns
+#        self_map = getMap()
+#        self.generic_visit(node, self_map)
+#        parent_map["func"].append((node.name, self_map))
+#
+#    def visit_ClassDef(self, node, parent_map):
+#        print "Heeyah!"
+#        nt = node_type(node)
+#        self_map = {}
+#        self.generic_visit(node, self_map)
+#        if not parent_map.has_key(nt): 
+#                parent_map[nt]=[]
+#        parent_map[nt].append((node.name, self_map))
 
-    def visit_ClassDef(self, node, parent_map):
-        #self.class_list.append(node.name)
-        self_map = getMap()
-        self.scoped_visit(node, self_map)
-        parent_map["class"].append((node.name, self_map))
+    def vist_Name(self, node, parent_map):
+        nt = node_type(node)
+        self_map = {}
+        self.generic_visit(node, self_map)
+        if not parent_map.has_key(nt): 
+                parent_map[nt]=[]
+        parent_class[nt].append((node.name, self_map))
 
-    def visit_Module(self, node, parent_map):
-        #All the classes
-        #self.class_list = [] 
-        #All the functions
-        #self.func_list = []
-        self_map = getMap()
-        self.scoped_visit(node, self_map)
-        #print self.class_list
-        #print self.func_list
-        parent_map["module"].append(("MODULE", self_map))
+def analyze(node):
+    self_map = {}
+    NodeVisitor().visit(node, self_map)
 
+    # self_map contains the ast represented as a dict 
+    print "Module AST is "
+    prettyPrint(self_map)
+  
+    print "Top level entities are: "
+    top_map = getTopLevelObjs2(self_map)  
+    prettyPrint(top_map)
 
-#    def visit_Module(self, node):
-#        for fieldname, value in ast.iter_fields(node):
-#            print fieldname, value.id
-
-
-class MyNodeVisitor(ast.NodeVisitor):
-    pass
-
-
-def getNode(filename):
-    f = open(filename, "r")
-    lines = "".join(f.readlines())
-    f.close()
-    
-    node = ast.parse(lines)
-    return node
-
-def analyze1(node):
-    #v = NodeVisitor()
-    v = AllNames()
-    v.visit(node)
-
-def analyze2(node):
-  self_map = getMap()
-  Func().visit(node, self_map)
-  print self_map
-
-def analyze3(node):
-    for i in ast.walk(node): 
-        print dir(i)
-
-def analyze4(node):
-    for node in ast.walk(node):
-        if isinstance(node, ast.FunctionDef):
-                print(node.name)
-
-class X():
-    pass
-
-def hello(self):
-    print "hello"
-setattr(X, "hellow", hello)
 
 if __name__ == '__main__':
 
+    #NOTE: consts.AST_NODE_TYPE controls granularity of tree
     node = getNode("test.py") 
-    analyze2(node)
+    analyze(node)
 
 
-    #x= X()
-    #x.hellow()
