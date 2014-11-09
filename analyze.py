@@ -37,56 +37,7 @@ def create_interconnection_graph(mod_vect):
     pass
 
 
-class NodeVisitor(ast.NodeVisitor):
-    def generic_visit(self, node):
-        print "In generic_visit"
-        print type(node).__name__
-        ast.NodeVisitor.generic_visit(self, node)
-
-    def visit_Name(self, node):
-        print 'Name :', node.id
-
-    def visit_Num(self, node):
-        print 'Num :', node.__dict__['n']
-
-    def visit_Str(self, node):
-        print "Str :", node.s
-
-    def visit_Print(self, node):
-        print "Print :"
-        ast.NodeVisitor.generic_visit(self, node)
-
-    def visit_Assign(self, node):
-        print "Assign :"
-        ast.NodeVisitor.generic_visit(self, node)
-
-    def visit_Expr(self, node):
-        print "Expr :"
-        ast.NodeVisitor.generic_visit(self, node)    
-
-class AllNames(ast.NodeVisitor):
-    def visit_Module(self, node):
-        self.names = set()
-        self.generic_visit(node)
-        print sorted(self.names)
-    def visit_Name(self, node):
-        self.names.add(node.id)
-
-class AllNames(ast.NodeVisitor):
-    def visit_Module(self, node):
-        self.names = set()
-        self.generic_visit(node)
-        print sorted(self.names)
-    def visit_Name(self, node):
-        print node.lineno, node.id, node.col_offset
-        print node
-        print dir(node)
-        print " "
-        self.names.add(node.id)
-
-
-
-def getNode(filename):
+def get_node(filename):
     """
     Returns a AST node object corresponding to argument file
     
@@ -102,11 +53,23 @@ def getNode(filename):
     node = ast.parse(lines)
     return node
 
-def prettyPrint(self_map):
+def pretty_print(self_map):
     pprint.pprint(self_map)
 
+def unique_id(node):
+    """
+    Returns progressively less informative identifiers
+    """
+    return getattr(node, "name", 
+        getattr(node, "id",
+            getattr(node, "lineno", 
+                id(node) 
+            )
+        )
+    )
 
-def getTopLevelObjs(self_map):
+
+def get_top_level_objs(self_map):
     """
     Returns dict of top level entity types to list of names
     """
@@ -119,8 +82,7 @@ def getTopLevelObjs(self_map):
 
     return top_level_objs
 
-
-def getTopLevelObjs2(self_map):
+def get_top_level_objs2(self_map):
     """
     Returns list of doubles of name and entity types
     """
@@ -173,8 +135,7 @@ class NodeVisitor(ast.NodeVisitor):
            node_map = {}
            if not parent_map.has_key(node_type): 
                 parent_map[node_type]=[]
-           unique_id = getattr(node, "name", node.lineno)
-           parent_map[node_type].append((unique_id, node_map))
+           parent_map[node_type].append((unique_id(node), node_map))
         
         for field, value in ast.iter_fields(node):
             if isinstance(value, list):
@@ -184,19 +145,23 @@ class NodeVisitor(ast.NodeVisitor):
             elif isinstance(value, ast.AST):
                 self.visit(value, node_map)
 
-#    def visit_Assign(self, node):
-#        print("\nIn Assign")
-#        print(node.value)
-#        self.generic_visit(node)
-    
+    def gvisit(self, node, parent_map): 
+        """generic visit function """
+        nt = node_type(node)
+        self_map = {}
+        self.generic_visit(node, self_map)
+        if not parent_map.has_key(nt): 
+                parent_map[nt]=[]
+        parent_map[nt].append((unique_id(node), self_map))
+
 #    def visit_FunctionDef(self, node, parent_map):
 #        #name, args, body, decorator_list, returns
 #        self_map = getMap()
 #        self.generic_visit(node, self_map)
 #        parent_map["func"].append((node.name, self_map))
 #
+    
 #    def visit_ClassDef(self, node, parent_map):
-#        print "Heeyah!"
 #        nt = node_type(node)
 #        self_map = {}
 #        self.generic_visit(node, self_map)
@@ -204,13 +169,25 @@ class NodeVisitor(ast.NodeVisitor):
 #                parent_map[nt]=[]
 #        parent_map[nt].append((node.name, self_map))
 
-    def vist_Name(self, node, parent_map):
-        nt = node_type(node)
-        self_map = {}
-        self.generic_visit(node, self_map)
-        if not parent_map.has_key(nt): 
-                parent_map[nt]=[]
-        parent_class[nt].append((node.name, self_map))
+    """
+    Example usage: a=1
+    Assign(targets=[
+        Name(id='a', ctx=Store()),
+                   ], value=Num(n=1)),
+     ])
+    """
+
+    def visit_Assign(self, node, parent_map):
+        self.gvisit(node, parent_map)
+    
+    def visit_Name(self, node, parent_map):
+        self.gvisit(node, parent_map)
+
+    def visit_Load(self, node, parent_map):
+        self.gvisit(node, parent_map)
+
+    def visit_Store(self, node, parent_map):
+        self.gvisit(node, parent_map)
 
 def analyze(node):
     self_map = {}
@@ -218,17 +195,17 @@ def analyze(node):
 
     # self_map contains the ast represented as a dict 
     print "Module AST is "
-    prettyPrint(self_map)
+    pretty_print(self_map)
   
     print "Top level entities are: "
-    top_map = getTopLevelObjs2(self_map)  
-    prettyPrint(top_map)
+    top_map = get_top_level_objs2(self_map)  
+    pretty_print(top_map)
 
 
 if __name__ == '__main__':
 
     #NOTE: consts.AST_NODE_TYPE controls granularity of tree
-    node = getNode("test.py") 
+    node = get_node("test.py") 
     analyze(node)
 
 
