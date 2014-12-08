@@ -61,13 +61,25 @@ def unique_id(node):
     Returns progressively less informative identifiers
     """
     return getattr(node, "name", 
-        getattr(node, "id",
-            getattr(node, "lineno", 
-                id(node) 
+            getattr(node, "id",
+                getattr(node, "lineno", 
+                    id(node) 
+                )
             )
         )
-    )
 
+def check_is_literal(node):
+    """
+    Checks if node represents a literal.
+    If literal, return value else returns original 
+    """
+    tp = type(node) 
+    if tp == ast.Str:
+        return ("LITERAL-STR", node.s)
+    elif tp == ast.Num:
+        return ("LITERAL-NUM", node.n)
+    else: 
+        return node
 
 def get_top_level_objs(self_map):
     """
@@ -127,15 +139,13 @@ class NodeVisitor(ast.NodeVisitor):
             node (AST Node)- the AST node to visited
             node_map (dict)- this node's map, contains descendents
         """
-        node_type = node.__class__.__name__
-        if node_type in consts.AST_NODE_TYPE2: 
+        ntype = node_type(node)
+        if ntype in consts.AST_NODE_TYPE2: 
            parent_map = node_map
-           #Create dict, and add entries on the fly
-           # as needed
            node_map = {}
-           if not parent_map.has_key(node_type): 
-                parent_map[node_type]=[]
-           parent_map[node_type].append((unique_id(node), node_map))
+           if not parent_map.has_key(ntype): 
+                parent_map[ntype]=[]
+           parent_map[ntype].append((unique_id(node), node_map))
         
         for field, value in ast.iter_fields(node):
             if isinstance(value, list):
@@ -147,12 +157,31 @@ class NodeVisitor(ast.NodeVisitor):
 
     def gvisit(self, node, parent_map): 
         """generic visit function """
-        nt = node_type(node)
+        ntype = node_type(node)
         self_map = {}
+        #All descendent info is in self_map
         self.generic_visit(node, self_map)
-        if not parent_map.has_key(nt): 
-                parent_map[nt]=[]
-        parent_map[nt].append((unique_id(node), self_map))
+        #Create dict, and add entries on the fly as needed
+        #TODO: Create a new data type that can do the following 
+        #check and insert in one shot
+        if not parent_map.has_key(ntype): 
+                parent_map[ntype]=[]
+        #Append your info in your parent's map        
+        parent_map[ntype].append((unique_id(node), self_map))
+
+    def visit_Import(self, node, parent_map):
+        """
+        Needed because alias is a list and unique id does
+        give it the appropriate name
+        """
+        #TODO: handle other types of imports
+        for alias in node.names:
+            ntype = node_type(node)
+            self_map = {}
+            self.generic_visit(node, self_map)
+            if not parent_map.has_key(ntype): 
+                    parent_map[ntype]=[]
+            parent_map[ntype].append((alias.name, self_map))
 
 #    def visit_FunctionDef(self, node, parent_map):
 #        #name, args, body, decorator_list, returns
@@ -178,16 +207,63 @@ class NodeVisitor(ast.NodeVisitor):
     """
 
     def visit_Assign(self, node, parent_map):
-        self.gvisit(node, parent_map)
+        #assignments typically have the form: targets = value
+        #First, Get the value 
+        value = None
+        #Holds the attr of a call object
+        attr = None
+        if node_type(node.value) == "Name":
+            value = node.value.id
+            #print "Name: value is {}".format(value)   
+            #self.visit_Name2(node.value)
+        
+        elif node_type(node.value) == "Call":
+            value = node.value.func
+            #print "Call: value is {} {}".format(value, type(value))  
+            if type(value) == ast.Attribute:
+                #print "Call value, ctx is {} {}".format(value.value, value.attr)
+                attr = value.attr
+                value = value.value 
+            #can't use elif since might neeed to go into both conditions
+            if type(value) == ast.Name:
+                #print "value.id is {}".format(value.id)
+                value = value.id
+            #print "value is {}".format(value)
+            
+            #Check for Literals
+            value = check_is_literal(value)
     
-    def visit_Name(self, node, parent_map):
-        self.gvisit(node, parent_map)
+        #Then create a mapping 
+        if value != None:
+            for target in node.targets:
+                if node_type(target) == "Name":
+                    if "Name" not in parent_map:
+                        parent_map["Name"] = []
+                    if attr: 
+                        tpl = (target.id, value, attr)
+                    else:
+                        tpl = (target.id,value)
+                    parent_map["Name"].append(tpl)
+                    
 
-    def visit_Load(self, node, parent_map):
-        self.gvisit(node, parent_map)
+        #print node.targets, node.value, node_type(node.value)
+        #self.gvisit(node, parent_map)
+    
+    def visit_Name2(self, node, parent_map):
+        #ctx, id
+        #print "In Name"
+        print "ID is: {}. ctx is {}.".format(node.id, node.ctx)
+        #self.gvisit(node, parent_map)
 
-    def visit_Store(self, node, parent_map):
-        self.gvisit(node, parent_map)
+#    def visit_Load(self, node, parent_map):
+#        self.gvisit(node, parent_map)
+#
+#    def visit_Store(self, node, parent_map):
+#        self.gvisit(node, parent_map)
+
+    def visit_Call(self, node, parent_map):
+        #func, function name of called
+        pass
 
 def analyze(node):
     self_map = {}
